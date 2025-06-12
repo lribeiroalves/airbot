@@ -4,7 +4,7 @@ from pyairports.airports import Airports
 from playwright.sync_api import sync_playwright, Playwright, Page
 from bs4 import BeautifulSoup, Tag
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 
 
@@ -20,7 +20,7 @@ def get_page(p:Playwright, hl:bool=True) -> Page:
     return page
 
 
-def get_prices(page:Page, org:str, dst:str, ida:datetime, volta:datetime) -> list[int]:
+def get_prices(page:Page, org:str, dst:str, ida:datetime, volta:datetime) -> tuple[list[int], str]:
     """Acessa o site Google Flights, pesquisa uma viagem de ida e volta e retorna os 5 melhores preços para essa data em uma lista de inteiros"""
     page.goto('https://www.google.com/travel/flights', timeout=5000)
     page.wait_for_timeout(300)
@@ -39,21 +39,26 @@ def get_prices(page:Page, org:str, dst:str, ida:datetime, volta:datetime) -> lis
     page.keyboard.press('Tab')
     page.wait_for_timeout(500)
     page.keyboard.press('Enter')
-    page.wait_for_timeout(1000)
-    page.screenshot(path='s.png')
-    span = page.locator('span', has_text='Mostrar mais voos').nth(0)
-    span.click()
-    page.wait_for_timeout(300)
+    page.wait_for_timeout(500)
+    try:
+      page.set_default_timeout(1500)
+      span = page.locator('span', has_text='Mostrar mais voos').nth(0)
+      span.click()
+      page.wait_for_timeout(300)
+    except Exception as e:
+        pass
+        
 
     html = page.content()
     soup = BeautifulSoup(html, 'html.parser')
+    url = page.url
     page.context.close()
 
     precos_str = soup.select('ul > li > div > div > div > div > div > div > div > div > span[role="text"]')
     precos_int = [int(re.sub(r'\D', '', preco.get_text())) for preco in precos_str[:len(precos_str)//2]]
     precos_int.sort()
 
-    return precos_int
+    return precos_int[:5], url
 
 
 def consultar_aeroporto(iata:str) -> bool:
@@ -62,29 +67,55 @@ def consultar_aeroporto(iata:str) -> bool:
         aeroporto = aeroportos.airport_iata(iata)
         return True if aeroporto else False
     except Exception as err:
-        print(f"Erro ao consultar o aeroporto: {err}")
+        print(f'Erro ao consultar o aeroporto: "{err}"')
         return False
     
 
 def consultar_data(data:str, formato:str='%d/%m/%Y') -> bool:
     try:
-        datetime.strptime(data, formato)
-        return True
+        data_formatada = datetime.strptime(data, formato)
+        return data_formatada
     except ValueError as err:
         print(f'Data {data} inválida.')
-        return False
+        return None
 
 
-def pesquisar(org:str, dst:str, ida_inicio:str, ida_fim:str, periodo:int, preco:int) -> pd.DataFrame:
+def pesquisar(org:str, dst:str, ida_inicio:str, ida_fim:str, periodo:int, target:int) -> pd.DataFrame:
     # Verificar o código IATA
-    if not consultar_aeroporto(org) or not consultar_aeroporto(dst):
+    if not consultar_aeroporto(org.upper()) or not consultar_aeroporto(dst.upper()):
         raise Exception('Aeroporto de origem ou destino não foi encontrado.')
     # Verificar as datas
-    if not consultar_data(ida_inicio) or not consultar_data(ida_fim):
-        raise Exception('Alguma data innserida não é válida.')
+    ida_inicio_f = consultar_data(ida_inicio)
+    ida_fim_f = consultar_data(ida_fim)
+    if not ida_inicio_f or not ida_fim_f:
+        raise Exception('Alguma data inserida não é válida.')
     # Verificar o tipo das variáveis de periodo(dias) e preco(target)
-    if not isinstance(periodo, int) or not isinstance(preco, int):
-        raise Exception('Período e preço precisam ser inteiros.')
+    if not isinstance(periodo, int) or not isinstance(target, int):
+        raise Exception('Período e preço precisam ser do tipo inteiros.')
+    if periodo < 2: periodo = 2
+
+    matches = []    
+    intervalo = ida_fim_f - ida_inicio_f
+    for i in range(intervalo.days+1):
+        with sync_playwright() as p:
+            for n in range(periodo-1, periodo+2):
+                ida = ida_inicio_f + timedelta(days=i)
+                volta = ida + timedelta(days=n)
+                page = get_page(p, True)
+                precos, url = get_prices(page, org.upper(), dst.upper(), ida, volta)
+                if precos:
+                    for preco in precos:
+                        if preco <= target*1.05:
+                            matches.append({'origem': org.upper(), 'destino': dst.upper(), 'ida': ida, 'volta': volta, 'preco': preco, 'url': url})
+                    # print(f'{org} - {dst} / {ida.strftime('%d_%m_%Y')} - {volta.strftime('%d_%m_%Y')} - {precos}')
+                else:
+                    print('Nada encontrado.')
+    if matches:
+        df = pd.DataFrame(matches)
+        print(df)
+    else:
+        print('A busca não retornou resultados.')
+        
 
 
 def main():
@@ -134,15 +165,19 @@ def main():
 
 
 if __name__ == '__main__':
+    tempo = datetime.now()
+
     pesquisas = [
-        {'origem': 'PNZ', 'destino':'GRU', 'ida_inicio':'16/12/2025', 'ida_fim':'20/12/2025', 'periodo':30, 'preco': 700},
-        {'origem': 'GRU', 'destino':'ZRH', 'ida_inicio':'28/11/2025', 'ida_fim':'30/11/2025', 'periodo':12, 'preco': 4000},
+        {'origem': 'PNZ', 'destino':'GRU', 'ida_inicio':'16/12/2025', 'ida_fim':'22/12/2025', 'periodo':30, 'preco': 750},
+        {'origem': 'GRU', 'destino':'ZRH', 'ida_inicio':'28/11/2025', 'ida_fim':'30/11/2025', 'periodo':11, 'preco': 4000},
     ]
 
     for viagem in pesquisas:
-        df = pesquisar(viagem['origem'], viagem['destino'], viagem['ida_inicio'], viagem['ida_fim'], viagem['periodo'], viagem['preco'])
+        try:
+            df = pesquisar(viagem['origem'], viagem['destino'], viagem['ida_inicio'], viagem['ida_fim'], viagem['periodo'], viagem['preco'])
+        except Exception as e:
+            print(e)
         # continuar
 
-    tempo = datetime.now()
-    main()
+    # main()
     print(datetime.now() - tempo)
