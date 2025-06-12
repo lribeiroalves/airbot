@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup, Tag
 import re
 from datetime import datetime, timedelta
 import pandas as pd
+import os
 
 
 def get_page(p:Playwright, hl:bool=True) -> Page:
@@ -13,7 +14,7 @@ def get_page(p:Playwright, hl:bool=True) -> Page:
     browser = p.chromium.launch(headless=hl)
     context = browser.new_context(
         locale='pt-BR',
-        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        # user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         viewport={'width': 1920, 'height': 1080}
     )
     page = context.new_page()
@@ -61,6 +62,31 @@ def get_prices(page:Page, org:str, dst:str, ida:datetime, volta:datetime) -> tup
     return precos_int[:5], url
 
 
+def send_whatsapp(msg:str = ''):
+    if msg == '':
+        print('Mensagem vazia, cancelando envio para o Whatsapp')
+        return
+    user_data_dir = os.path.abspath("whatsapp_sessao")
+    with sync_playwright() as p:
+        browser = p.chromium.launch_persistent_context(
+            user_data_dir,
+            locale='pt-BR',
+            headless=False,
+            viewport={'width': 1800, 'height': 900}
+        )
+        page = browser.new_page()
+        page.goto('https://web.whatsapp.com/')
+        page.wait_for_timeout(5000)
+        page.set_default_timeout(10000)
+        page.fill('p:has(> br)', 'Passagens')
+        page.keyboard.press('Enter')
+        page.wait_for_timeout(300)
+        page.fill('p:has(> br)', msg)
+        page.keyboard.press('Enter')
+        page.wait_for_timeout(500)
+        page.context.close()
+
+
 def consultar_aeroporto(iata:str) -> bool:
     try:
         aeroportos = Airports()
@@ -93,7 +119,6 @@ def pesquisar(org:str, dst:str, ida_inicio:str, ida_fim:str, periodo:int, target
     if not isinstance(periodo, int) or not isinstance(target, int):
         raise Exception('Período e preço precisam ser do tipo inteiros.')
     if periodo < 2: periodo = 2
-
     matches = []    
     intervalo = ida_fim_f - ida_inicio_f
     for i in range(intervalo.days+1):
@@ -107,16 +132,12 @@ def pesquisar(org:str, dst:str, ida_inicio:str, ida_fim:str, periodo:int, target
                     for preco in precos:
                         if preco <= target*1.05:
                             matches.append({'origem': org.upper(), 'destino': dst.upper(), 'ida': ida, 'volta': volta, 'preco': preco, 'url': url})
-                    # print(f'{org} - {dst} / {ida.strftime('%d_%m_%Y')} - {volta.strftime('%d_%m_%Y')} - {precos}')
-                else:
-                    print('Nada encontrado.')
     if matches:
         df = pd.DataFrame(matches)
-        print(df)
+        return df
     else:
-        print('A busca não retornou resultados.')
+        return None
         
-
 
 def main():
     with sync_playwright() as p:
@@ -174,10 +195,17 @@ if __name__ == '__main__':
 
     for viagem in pesquisas:
         try:
+            print(f'Buscando passagens para {viagem["origem"]}/{viagem["destino"]}')
             df = pesquisar(viagem['origem'], viagem['destino'], viagem['ida_inicio'], viagem['ida_fim'], viagem['periodo'], viagem['preco'])
+            if df is not None:
+                send_whatsapp(df.to_string(index=False))
+                print(f'Resultados enviados para o WhatsApp\n')
+            else:
+                print('Não foram encontrados resultados para o preço target.\n')
         except Exception as e:
             print(e)
-        # continuar
 
     # main()
     print(datetime.now() - tempo)
+
+    # send_whatsapp()
