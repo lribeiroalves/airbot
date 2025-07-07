@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timedelta
 import pandas as pd
 import os
+from typing import Optional
 
 
 def get_page(p:Playwright, hl:bool=True) -> Page:
@@ -97,7 +98,7 @@ def consultar_aeroporto(iata:str) -> bool:
 		return False
 		
 
-def consultar_data(data:str, formato:str='%d/%m/%Y') -> bool:
+def consultar_data(data:str, formato:str='%d/%m/%Y') -> Optional[datetime]:
 	try:
 		data_formatada = datetime.strptime(data, formato)
 		return data_formatada
@@ -106,7 +107,7 @@ def consultar_data(data:str, formato:str='%d/%m/%Y') -> bool:
 		return None
 
 
-def pesquisar(org:str, dst:str, ida_inicio:str, ida_fim:str, periodo:int, target:int) -> pd.DataFrame:
+def pesquisar(org:str, dst:str, ida_inicio:str, ida_fim:str, periodo:int, target:int) -> Optional[pd.DataFrame]:
 	# Verificar o código IATA
 	if not consultar_aeroporto(org.upper()) or not consultar_aeroporto(dst.upper()):
 		raise Exception('Aeroporto de origem ou destino não foi encontrado.')
@@ -141,7 +142,7 @@ def pesquisar(org:str, dst:str, ida_inicio:str, ida_fim:str, periodo:int, target
 
 if __name__ == '__main__':
 	pesquisas = [
-		{'origem': 'PNZ', 'destino':'GRU', 'ida_inicio':'16/12/2025', 'ida_fim':'22/12/2025', 'periodo':30, 'preco': 750, 'enable': True},
+		{'origem': 'PNZ', 'destino':'GRU', 'ida_inicio':'16/12/2025', 'ida_fim':'22/12/2025', 'periodo':30, 'preco': 950, 'enable': True},
 		# {'origem': 'GRU', 'destino':'ZRH', 'ida_inicio':'28/11/2025', 'ida_fim':'30/11/2025', 'periodo':11, 'preco': 3800, 'enable': True},
 		# {'origem': 'GRU', 'destino':'MUC', 'ida_inicio':'28/11/2025', 'ida_fim':'30/11/2025', 'periodo':11, 'preco': 3800, 'enable': True},
 	]
@@ -169,6 +170,6 @@ if __name__ == '__main__':
 					except Exception as e:
 						print(e)
 				else:
-					print(f'Preços para {viagem['origem']}/{viagem['destino']} já foram enconntrados.')
+					print(f'Preços para {viagem['origem']}/{viagem['destino']} já foram encontrados.')
 			print(f'Próxima execução às {(tempo_inical+intervalo_tempo).strftime('%d/%m/%Y - %H:%M:%S')}')
 			print('=' * 50, end='\n\n')
