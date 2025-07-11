@@ -67,7 +67,12 @@ def send_whatsapp(msg:str = ''):
 	if msg == '':
 		print('Mensagem vazia, cancelando envio para o Whatsapp')
 		return
+	
 	user_data_dir = os.path.abspath("whatsapp_sessao")
+
+	if not os.path.exists(user_data_dir):
+		print('Sessao nao encontrada, sera necessario escanear o QR Code.')
+
 	with sync_playwright() as p:
 		browser = p.chromium.launch_persistent_context(
 				user_data_dir,
@@ -143,12 +148,13 @@ def pesquisar(org:str, dst:str, ida_inicio:str, ida_fim:str, periodo:int, target
 if __name__ == '__main__':
 	pesquisas = [
 		{'origem': 'PNZ', 'destino':'GRU', 'ida_inicio':'16/12/2025', 'ida_fim':'22/12/2025', 'periodo':30, 'preco': 950, 'enable': True},
-		# {'origem': 'GRU', 'destino':'ZRH', 'ida_inicio':'28/11/2025', 'ida_fim':'30/11/2025', 'periodo':11, 'preco': 3800, 'enable': True},
+		{'origem': 'GRU', 'destino':'MCO', 'ida_inicio':'01/05/2026', 'ida_fim':'15/05/2026', 'periodo':12, 'preco': 1500, 'enable': True},
 		# {'origem': 'GRU', 'destino':'MUC', 'ida_inicio':'28/11/2025', 'ida_fim':'30/11/2025', 'periodo':11, 'preco': 3800, 'enable': True},
 	]
 
 	tempo_inical = datetime.now() - timedelta(minutes=31)
 	intervalo_tempo = timedelta(minutes=30)
+
 	while True:
 		tempo = datetime.now()
 		if tempo >= tempo_inical + intervalo_tempo:
